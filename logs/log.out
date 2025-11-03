@@ -1,0 +1,8 @@
+[21:23:18.071 | 2025-11-02] ERROR - Directory 'tmp' already exists, please delete it and try again
+[21:23:50.524 | 2025-11-02] ERROR - Directory 'tmp' already exists, please delete it and try again
+[21:23:55.965 | 2025-11-02] SUCCESS - TMP folder created
+[21:29:10.358 | 2025-11-02] SUCCESS - TMP folder created
+[21:31:38.931 | 2025-11-02] NOTICE - User parsed --a False arguments
+[21:31:38.932 | 2025-11-02] ERROR - Directory 'tmp' already exists, please delete it and try again
+[21:31:48.313 | 2025-11-02] NOTICE - User parsed --a False arguments
+[21:31:48.314 | 2025-11-02] ERROR - Directory 'tmp' already exists, please delete it and try again
