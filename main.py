@@ -182,19 +182,16 @@ class Config:
             config = """\
 #Main Abrix Config File
 [PROJECTS] {
-set pr1 = C:/__p__/--py--/abrix/test/proxyservice
-set pr2 = C:/__p__/--py--/abrix/test/rating
+set pr1 = 
 }
 [TOMCAT] {
-set t = C:/debug/test67/tomcat-11
+set t = 
 }
 [PRFNA] {
-set pr1 = proxyservice-2.1.war
-set pr2 = rating-0.0.2-SNAPSHOT.war
+set pr1 = 
 }
 [PRFNNA] {
-set pr1 = proxyservice.war
-set pr2 = ratingservice.war
+set pr1 =
 }
 [TOMCATV] {
 set v = 11.0.13
