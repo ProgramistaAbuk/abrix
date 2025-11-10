@@ -19,7 +19,60 @@ import pV
 tomcatV = ""
 globalTomcatDir = ""
 
+def run_mvn_install(path):
+    cmd = f'bash -c "source $HOME/.sdkman/bin/sdkman-init.sh && sdk install mvnd"'
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        cwd=path,
+        capture_output=True,
+        text=True
+    )
+    print("Return code:", result.returncode)
+    print("STDOUT:\n", result.stdout)
+    print("STDERR:\n", result.stderr)
+    return result
 
+def detect_package_manager():
+    managers = ["pacman", "apt", "apt-get", "dnf", "yum", "zypper"]
+    for m in managers:
+        if shutil.which(m):
+            return m
+    return None
+
+def install_packages(packages):
+    manager = detect_package_manager()
+    if not manager:
+        raise SystemError("No supported package manager found on this system.")
+
+    if manager == "pacman":
+        cmd = ["sudo", "pacman", "-S", "--noconfirm"] + packages
+    elif manager in ("apt", "apt-get"):
+        cmd = ["sudo", manager, "install", "-y"] + packages
+    elif manager == "dnf":
+        cmd = ["sudo", "dnf", "install", "-y"] + packages
+    elif manager == "yum":
+        cmd = ["sudo", "yum", "install", "-y"] + packages
+    elif manager == "zypper":
+        cmd = ["sudo", "zypper", "--non-interactive", "install"] + packages
+    else:
+        raise SystemError("Package manager recognized but not supported in script.")
+
+    print("Installing: ", " ".join(cmd))
+    subprocess.run(cmd, check=True)
+
+def is_installedSdk():
+    cmd = 'bash -c "source \"$HOME/.sdkman/bin/sdkman-init.sh\" && sdk version"'
+    try:
+        subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        Log("SDK installed", 'N').write()
+        return True
+    except Exception:
+        return False
+
+
+def is_installed(cmd):
+    return shutil.which(cmd) is not None
 
 def find_all_java_windows():
     java_dirs = [
@@ -234,14 +287,90 @@ class Mvn:
     def __init__(self, path):
         self.path = path
     def runMvn(self):
-        resuslt = subprocess.run(["mvn.cmd", "clean", "install"],
-        cwd=self.path,     stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-        )
-        Log(f"Maven result {resuslt.stdout}", "N").write()
+        os_name = platform.system()
+        if os_name == "Windows":
+            try:
+                resuslt = subprocess.run(["mvn.cmd", "clean", "install"],
+                cwd=self.path,     stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+                )
+                Log(f"Maven result {resuslt.stdout}", "N").write()
+            except FileNotFoundError:
+                Log("Maven not found", "E").write()
+        else:
+            try:
 
+                cmd = f'bash -c "source $HOME/.sdkman/bin/sdkman-init.sh && mvnd clean install"'
 
+                resuslt = subprocess.run(
+                    cmd,
+                    shell=True,
+                    cwd=self.path,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                Log(f"Maven result {resuslt.stdout}", "N").write()
+            except FileNotFoundError:
+                Log("Maven not found", "E").write()
+                mvnin = input(f"Install maven on detected system {os_name}? (Y/n): ")
+                if mvnin == "Y" or mvnin == "y":
+                    Log("Installing mvn using sdk", 'N').write()
+                    zip = is_installed("zip")
+                    sdk = is_installedSdk()
+                    if zip == True and sdk == True:
+                        Log("Both zip and sdk installed - proceeding with install", "N").write()
+                        akb = run_mvn_install(self.path)
+                        if "Done installing" in akb.stdout:
+
+                            Log("Completed mvnd install using sdk - re running function", "N").write()
+                            Mvn(self.path).runMvn()
+                        else:
+                            Log("Maven install using sdk failed - you must install maven manually", "N").write()
+                            clean()
+                            sys.exit("Maven not installed and auto install failed")
+                    elif zip == False:
+                        Log("Zip not installed", "N").write()
+                        izip = input("Install zip to complete mvnd install? (Y/n): ")
+                        if izip == "Y" or izip == "y":
+                            Log("Installing zip", "N").write()
+                            install_packages(["zip"])
+                            Log("Zip installed - re running Mvn script to install mvn", 'N').write()
+                            Mvn(self.path).runMvn()
+                        else:
+                            Log("Zip install aborted - program cannot run without maven, to install maven, zip is required, exiting", "E").write()
+                            clean()
+                            sys.exit("Maven not installed and user aborted auto install")
+                    elif sdk == False:
+                        Log("Sdk not installed", "N").write()
+                        iisdk = input("Install sdk (sdk and zip are required for maven install)? (Y/n): ")
+                        if iisdk == "Y" or iisdk == "y":
+                            Log("Proceding with sdk install", "N").write()
+                            try:
+                                curl = subprocess.run(
+                                    ["curl", "-s", "https://get.sdkman.io"],
+                                    capture_output=True,
+                                    check=True
+                                )
+
+                                subprocess.run(
+                                    ["bash"],
+                                    input=curl.stdout,
+                                    check=True
+                                )
+
+                                subprocess.run(
+                                    'bash -c "source \"$HOME/.sdkman/bin/sdkman-init.sh\" && sdk version"',
+                                    shell=True,
+                                    check=True
+                                )
+                            except Exception as e:
+                                Log(f"Exception encountered when installing sdk  {e} - exiting", 'E').write()
+                                clean()
+                                sys.exit("Sdk install fail - please install sdk and zip (or install maven another way) and re run program")
+                            Log("Installed sdk - re running mvn function to now install mvn", "S").write()
+                            Mvn(self.path).runMvn()
 def clean():
     Log("Clean up", 'N').write()
     shutil.rmtree('tmp')
@@ -420,11 +549,13 @@ def startTomcat(path):
 
     Log(f"Ran tomcat - Result is: {result.stdout}", "S").write()
     er = "Result is: Neither the JAVA_HOME nor the JRE_HOME environment variable is defined"
-    if "JAVA_HOME" in result.stdout and "is defined" in result.stdout:
+    yes = False
+    if "JAVA_HOME" in result.stdout and "is defined" in result.stdout or (yes == True):
         Log("Java not properly configured", "E").write()
         a = input(f"Set up Java in TOMCAT {path} startup file? (Y/n): ")
         if a == "Y" or a == "y":
             jI = javaInstall()
+            # jI = False
             if jI:
                 Log("Abrix found an installed version of java on this machine", "S").write()
                 print(f"Please select one of the following JAVA versions to use for TOMCAT {path}")
@@ -465,15 +596,67 @@ def startTomcat(path):
                 Log("No JAVA installation found on system", "E").write()
                 a = input("Find and install JAVA on system? (Y/n): ")
                 if a == "Y" or a == "y":
-                    print("You thought this would actually install JAVA - the least you can do is install it yourself")
-                    print("Yeah no I was just too lazy to add something that finds java jdk versions, asks user what  one to do and then actually install and extract - too much work")
-                    print("If you see this and want to make the function yourself feel free to submit pull request")
-                    print("Go to around line 474 - that's where this message is")
-                    Log("Denied auto install - must install manually before running program", "E").write()
-                    url = "https://www.oracle.com/java/technologies/downloads/"
-                    webbrowser.open(url)
-                    clean()
-                    sys.exit("Please install JAVA properly")
+                    if os_name == "Linux" or os_name == "Darwin":
+                        Log("Installing java on linux", "N").write()
+                        Log("Installing java using sdkman", "N").write()
+                        cmd = f'bash -c "source $HOME/.sdkman/bin/sdkman-init.sh && sdk list java"'
+                        result = subprocess.run(
+                            cmd,
+                            shell=True,
+                            cwd=path,
+                            text=True,
+                            env={**os.environ, "SDKMAN_PAGER": "cat"},
+                            stdout = subprocess.PIPE,
+                            stderr = subprocess.PIPE
+                        )
+
+                        nl = []
+                        lines = result.stdout.splitlines()
+                        for i in lines:
+                            if "|" in i:
+                                nl.append(i)
+                            else:
+                                pass
+
+                        for i, line in enumerate(nl):
+                            print(f"{i}: {line}")
+
+                        choice = int(input("Enter the line number of the JDK you want (e.g '0' 1' '2' '3'): "))
+
+                        selected_line = nl[choice]
+
+                        identifier = selected_line.split("|")[-1].strip()
+
+                        Log(f"You selected identifier {identifier}", "N").write()
+                        ci = input(f"Are you sure you want to install JAVA {identifier} using sdk?: (Y/n): ")
+                        if ci == "Y" or ci == 'y':
+                            cmd = f'bash -c "source $HOME/.sdkman/bin/sdkman-init.sh && sdk install java {identifier}"'
+                            result = subprocess.run(
+                                cmd,
+                                shell=True,
+                                cwd=path,
+                                capture_output=True,
+                                text=True
+                            )
+                            if "Done installing" in result.stdout:
+                                Log(f"Successfully installed java {identifier}", 'S').write()
+                                Log("Adding new java home to tomcat", "N").write()
+                                addjhome(path, os.path.join(os.environ["HOME"], ".sdkman", "candidates", "java", identifier))
+                                Log("Java home added properly", 'S').write()
+                                Log("Re running start tomcat with now installed Java", "N").write()
+                                startTomcat(path)
+                            else:
+                                Log(f"Java auto install failed {result.stdout}", 'E').write()
+                                clean()
+                                sys.exit("Java auto install failed - please install manually")
+                        else:
+                            Log("User aborted - exiting", "E").write()
+                            clean()
+                            sys.exit("Cannot run tomcat without java and user stopped java auto install")
+                        # print(f"You selected identifier: {identifier}")
+                    else:
+                        Log("Installing java on windows", "N").write()
+
                 else:
                     Log("Denied auto install - must install manually before running program", "E").write()
                     url = "https://www.oracle.com/java/technologies/downloads/"
@@ -486,9 +669,20 @@ def startTomcat(path):
             sys.exit(f"Please configure JAVA_HOME or JRE_HOME and confirm tomcat can run at dir {path} before telling this program to run tomcat")
 
 
+def nop():
+    apn = []
+    for klm in pV.vars['PROJECTS']:
+        apn.append(klm[0])
+    nocp = input("What would you like to name this project: ")
+    while nocp in apn:
+        print("That name is already in use, please use a different name")
+        nocp = input("What would you like to name this project: ")
+    return nocp
 
+gbconf = False
 def main():
-
+    global gbconf
+    global globalTomcatDir
     parser = argparse.ArgumentParser(description='Description of your program')
     parser.add_argument('-a', '--all', action='store_true', help='Overwrite check changes, compile all wars')
     parser.add_argument(
@@ -513,6 +707,12 @@ def main():
         nargs='?',
         help='Force specific folder to be JAVA for tomcat'
     )
+
+    parser.add_argument(
+        '-cp', '--cloneprojects',
+        nargs='?',
+        help='Get and prepare all projects from the [GHUB] tag to a specific folder'
+    )
     # parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose mode')
     # parser.add_argument('filename', help='Positional argument (required)')
     args = parser.parse_args()
@@ -522,6 +722,7 @@ def main():
     Log(f'User parsed --t {args.tomcat} arguments', 'N').write()
     Log(f'User parsed -ct {args.createtomcat} arguments', 'N').write()
     Log(f'User parsed -jm {args.javamanual} arguments', 'N').write()
+    Log(f'User parsed -cp {args.cloneprojects} arguments', 'N').write()
 
     if args.config == "gen":
         Config().gen()
@@ -545,6 +746,65 @@ def main():
         sys.exit("Changes saved, rerun program")
     with open("conf/abrix.dat.hash", "r") as f:
         c = f.readlines()
+    aflsdir = []
+    if args.cloneprojects is not None:
+        Log("Cloning all entered projects from .conf file [GHUB]", 'N').write()
+        for i in pV.vars:
+            if i == "GHUB":
+                for a in pV.vars[i]:
+                    repo_name = os.path.basename(a[1])
+                    if repo_name.endswith(".git"):
+                        repo_name = repo_name[:-4]
+
+                    sdir = "Default"
+                    roa = int(input(f"Would you like to save the repo with folder name repo_name {repo_name}, or pre-set config name {a[0]}? ('1' or '2'): "))
+                    if roa == 1:
+                        sdir = repo_name
+                        aflsdir.append(sdir)
+                    else:
+                        sdir = a[0]
+                        aflsdir.append(sdir)
+
+                    result = subprocess.run(
+                        ["git", "clone", a[1], f"{args.cloneprojects}/{sdir}"],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True
+                    )
+                    # Check output
+                    if result.returncode == 0:
+                        Log(f"Successfully cloned project {a[1]} to folder {args.cloneprojects}", 'S').write()
+                        gbconf = True
+
+                    else:
+                        Log(f"Failed to clone project {a[1]} to folder {args.cloneprojects} - exiting, result: {result.stderr}", "E").write()
+                        clean()
+                        sys.exit("Github clone failed - make sure the github link is correct and you have access to the repo")
+        for r in aflsdir:
+            if result.returncode == 0:
+                atac = input(f"Add {r} project to abrix config? (Y/n): ")
+                if atac == "Y" or atac == 'y':
+                    Log(f"Adding {r} project to abrix config", "N").write()
+                    nocp = nop()
+                    with open('conf/abrix.conf', 'r') as c:
+                        conf = c.readlines()
+                        for kl, mi in enumerate(conf):
+                            if "[PROJECTS]" in mi:
+                                nn = f"set {nocp} = {args.cloneprojects}/{r}\n"
+                                conf.insert(kl + 1, nn)
+                    with open("conf/abrix.conf", "w") as f:
+                        f.writelines(conf)
+
+                else:
+                    Log(f"Skipping add project {r[1]} to abrix config", "N").write()
+                    pass
+            else:
+                Log(f"Failed to clone project {a[1]} to folder {args.cloneprojects} - exiting, result: {result.stderr}","E").write()
+                clean()
+                sys.exit("Github clone failed - make sure the github link is correct and you have access to the repo")
+        Log("Completed get projects - exiting", 'S').write()
+        clean()
+        sys.exit("Completed get projects - exiting")
 
     oldFileNames = {}
     newFileNames = {}
@@ -650,10 +910,16 @@ def main():
     clean()
 
 
+def runMini():
+    global globalTomcatDir
+    fold()
+    Config().read()
+    globalTomcatDir = pV.vars['TOMCAT'][0][1]
+
 if __name__ == '__main__':
+    # Config().read()
+    # print(pV.vars)
     main()
 
 
-
-
-
+        # print(conf[1])

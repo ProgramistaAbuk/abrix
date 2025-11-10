@@ -93,6 +93,9 @@ The only purpose of this tag is when using param `--createtomcat`, what you inpu
 Keep in mind to use  the full version, e.g '10.1.3' not '10'
 
 
+> [!NOTE]
+> Keep in mind that when the program creates tomcat on linux, you must go into the `tomcat/bin` folder and run `sudo chmod 777 ./*sh` - this ensures all files are executable and allows tomcat to properly run
+
 - General info on tags
 
 All tags have the same syntax after [TAGNAME] {}, you put in variables as such:
@@ -149,3 +152,6 @@ for all JDK's on system), once user chooses, abrix will either (depending on use
 or just do a single startup with that JAVA_HOME env
 - If you get to page where program asks if install JAVA manually, that feature doesn't exist yet,
 if someone would like to add it go to `main.py` line `474`
+
+
+
